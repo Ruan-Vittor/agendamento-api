@@ -1,21 +1,22 @@
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-# Banco SQLite local — arquivo criado automaticamente na raiz do projeto
-DATABASE_URL = "sqlite:///./agendamento.db"
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./agendamento.db")
 
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False}  # necessário para SQLite com FastAPI
-)
+# Render entrega URLs com "postgres://", mas SQLAlchemy exige "postgresql://"
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+connect_args = {"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
+
+engine = create_engine(DATABASE_URL, connect_args=connect_args)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
-
-# Dependência usada nos endpoints para obter uma sessão do banco
 def get_db():
     db = SessionLocal()
     try:
