@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import extract
 from datetime import datetime
 from typing import Optional
-import os
+import io
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -20,23 +20,20 @@ from app import models
 
 router = APIRouter(prefix="/relatorio", tags=["Relatórios"])
 
-# ── Paleta ──────────────────────────────────────────────────
 AZUL        = colors.HexColor("#1A5276")
 AZUL_CLARO  = colors.HexColor("#D6EAF8")
 CINZA_BG    = colors.HexColor("#F4F6F7")
 CINZA_TEXT  = colors.HexColor("#2C3E50")
 VERDE       = colors.HexColor("#1E8449")
 VERMELHO    = colors.HexColor("#922B21")
-AMARELO_BG  = colors.HexColor("#FDFEFE")
 BRANCO      = colors.white
 
-MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
-            "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
+MESES_PT  = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+             "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
 MESES_ABR = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"]
 
 
 def fmt_brl(valor: float) -> str:
-    """Formata float para moeda brasileira: R$ 1.234,56"""
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
@@ -84,34 +81,31 @@ def coletar_dados(db: Session, mes: int, ano: int) -> dict:
     }
 
 
-def gerar_pdf(d: dict, mes: int, ano: int, caminho: str):
+def gerar_pdf(d: dict, mes: int, ano: int) -> bytes:
+    """Gera o PDF em memória e retorna os bytes."""
+    buffer = io.BytesIO()
+
     doc = SimpleDocTemplate(
-        caminho, pagesize=A4,
+        buffer, pagesize=A4,
         leftMargin=2*cm, rightMargin=2*cm,
         topMargin=2*cm,  bottomMargin=2*cm,
     )
     story = []
 
-    # ── Estilos ──────────────────────────────────────────────
     def st(name, **kw):
         return ParagraphStyle(name, **kw)
 
-    S_TITULO   = st("titulo",   fontSize=20, textColor=AZUL,      alignment=TA_CENTER, fontName="Helvetica-Bold", spaceAfter=4)
-    S_SUB      = st("sub",      fontSize=13, textColor=CINZA_TEXT, alignment=TA_CENTER, fontName="Helvetica",     spaceAfter=2)
-    S_GERADO   = st("gerado",   fontSize=9,  textColor=colors.grey,alignment=TA_CENTER, spaceAfter=16)
-    S_SECAO    = st("secao",    fontSize=11, textColor=AZUL,       fontName="Helvetica-Bold", spaceAfter=10, spaceBefore=4)
-    S_CARD_NUM = st("cnum",     fontSize=26, textColor=AZUL,       fontName="Helvetica-Bold", alignment=TA_CENTER, leading=30)
-    S_CARD_LBL = st("clbl",     fontSize=8,  textColor=CINZA_TEXT, alignment=TA_CENTER, leading=11)
-    S_RODAPE   = st("rodape",   fontSize=10, textColor=CINZA_TEXT, alignment=TA_CENTER)
+    S_TITULO = st("titulo", fontSize=20, textColor=AZUL,      alignment=TA_CENTER, fontName="Helvetica-Bold", spaceAfter=4)
+    S_SUB    = st("sub",    fontSize=13, textColor=CINZA_TEXT, alignment=TA_CENTER, fontName="Helvetica",     spaceAfter=2)
+    S_GERADO = st("gerado", fontSize=9,  textColor=colors.grey,alignment=TA_CENTER, spaceAfter=16)
+    S_SECAO  = st("secao",  fontSize=11, textColor=AZUL,       fontName="Helvetica-Bold", spaceAfter=10, spaceBefore=4)
+    S_RODAPE = st("rodape", fontSize=10, textColor=CINZA_TEXT, alignment=TA_CENTER)
 
-    # ── Cabeçalho ────────────────────────────────────────────
     story.append(Paragraph("SISTEMA DE AGENDAMENTO", S_TITULO))
     story.append(Paragraph(f"Relatório Mensal — {MESES_PT[mes-1]} {ano}", S_SUB))
     story.append(Paragraph(f"Gerado em {datetime.now().strftime('%d/%m/%Y às %H:%M')}", S_GERADO))
     story.append(HRFlowable(width="100%", thickness=2, color=AZUL, spaceAfter=18))
 
-    # ── Cards de resumo ──────────────────────────────────────
-    # Cada card: linha 0 = número, linha 1 = label (tabela separada por card)
     story.append(Paragraph("RESUMO DO MÊS", S_SECAO))
 
     def make_card(valor_str, label, cor_num=AZUL):
@@ -134,12 +128,11 @@ def gerar_pdf(d: dict, mes: int, ano: int, caminho: str):
         ]))
         return t
 
-    taxa_str = f"{d['taxa']}%"
     cards_row = [[
         make_card(str(d["total"]),      "Total de Agendamentos"),
         make_card(str(d["concluidos"]), "Concluídos",  VERDE),
         make_card(str(d["cancelados"]), "Cancelados",  VERMELHO),
-        make_card(taxa_str,             "Taxa de Conclusão"),
+        make_card(f"{d['taxa']}%",      "Taxa de Conclusão"),
     ]]
     tabela_cards = Table(cards_row, colWidths=[4.1*cm]*4, hAlign="CENTER")
     tabela_cards.setStyle(TableStyle([
@@ -150,7 +143,6 @@ def gerar_pdf(d: dict, mes: int, ano: int, caminho: str):
     story.append(tabela_cards)
     story.append(Spacer(1, 20))
 
-    # ── Faturamento ──────────────────────────────────────────
     story.append(Paragraph("FATURAMENTO", S_SECAO))
     total_fat = d["fat_pago"] + d["fat_pendente"]
     linhas_fat = [
@@ -179,7 +171,6 @@ def gerar_pdf(d: dict, mes: int, ano: int, caminho: str):
     story.append(t_fat)
     story.append(Spacer(1, 20))
 
-    # ── Formas de pagamento ──────────────────────────────────
     if d["formas"]:
         story.append(Paragraph("FORMAS DE PAGAMENTO RECEBIDAS", S_SECAO))
         linhas_fp = [["Forma de Pagamento", "Quantidade"]]
@@ -203,7 +194,6 @@ def gerar_pdf(d: dict, mes: int, ano: int, caminho: str):
         story.append(t_fp)
         story.append(Spacer(1, 20))
 
-    # ── Tabela de agendamentos ───────────────────────────────
     story.append(Paragraph("TODOS OS AGENDAMENTOS DO MÊS", S_SECAO))
 
     if not d["ags"]:
@@ -221,12 +211,11 @@ def gerar_pdf(d: dict, mes: int, ano: int, caminho: str):
                 str(ag.id),
                 ag.data_hora.strftime("%d/%m  %H:%M"),
                 ag.cliente.nome[:24],
-                ag.servico.nome[:26],       # aumentado de 18 para 26
-                fmt_brl(ag.servico.preco),  # formatação brasileira
+                ag.servico.nome[:26],
+                fmt_brl(ag.servico.preco),
                 STATUS_PT.get(ag.status, ag.status.upper()),
             ])
 
-        # Larguras ajustadas para caber melhor
         t_ag = Table(linhas_ag, colWidths=[0.8*cm, 2.6*cm, 4*cm, 4*cm, 2.3*cm, 2.8*cm])
         style_ag = TableStyle([
             ("BACKGROUND",    (0,0), (-1,0), AZUL),
@@ -252,7 +241,6 @@ def gerar_pdf(d: dict, mes: int, ano: int, caminho: str):
         t_ag.setStyle(style_ag)
         story.append(t_ag)
 
-    # ── Rodapé ───────────────────────────────────────────────
     story.append(Spacer(1, 20))
     story.append(HRFlowable(width="100%", thickness=1, color=colors.lightgrey, spaceAfter=10))
     story.append(Paragraph(
@@ -261,6 +249,8 @@ def gerar_pdf(d: dict, mes: int, ano: int, caminho: str):
     ))
 
     doc.build(story)
+    buffer.seek(0)
+    return buffer.read()
 
 
 @router.get("/")
@@ -269,10 +259,6 @@ def gerar_relatorio(
     ano: Optional[int] = None,
     db: Session = Depends(get_db)
 ):
-    """
-    Gera e retorna o relatório mensal em PDF.
-    Sem parâmetros usa o mês atual. Ex: /relatorio/?mes=5&ano=2025
-    """
     agora = datetime.now()
     mes   = mes or agora.month
     ano   = ano or agora.year
@@ -283,13 +269,10 @@ def gerar_relatorio(
         raise HTTPException(status_code=400, detail="Ano inválido.")
 
     dados = coletar_dados(db, mes, ano)
+    pdf_bytes = gerar_pdf(dados, mes, ano)
 
-    os.makedirs("relatorios", exist_ok=True)
-    caminho = f"relatorios/relatorio_{MESES_ABR[mes-1]}_{ano}.pdf"
-    gerar_pdf(dados, mes, ano, caminho)
-
-    return FileResponse(
-        caminho,
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
         media_type="application/pdf",
-        filename=f"relatorio_{MESES_ABR[mes-1]}_{ano}.pdf"
+        headers={"Content-Disposition": f"attachment; filename=relatorio_{MESES_ABR[mes-1]}_{ano}.pdf"}
     )
