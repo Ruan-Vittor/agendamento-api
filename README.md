@@ -1,12 +1,18 @@
 # 📅 Sistema de Agendamento para Autônomos
 
-API REST para gerenciamento de agendamentos, clientes, serviços e pagamentos — desenvolvida com **FastAPI**, **SQLAlchemy** e **SQLite**.
+API REST para gerenciamento de agendamentos, clientes, serviços e pagamentos — desenvolvida com **FastAPI**, **SQLAlchemy** e **PostgreSQL**.
+
+## 🌐 Deploy
+
+API em produção: https://agendamento-api-clnt.onrender.com
 
 ## 🚀 Tecnologias
+
 - **Python 3.11+**
 - **FastAPI** — framework web moderno e de alta performance
 - **SQLAlchemy** — ORM para banco de dados
-- **SQLite** — banco de dados local, sem necessidade de instalação
+- **PostgreSQL** — banco de dados em produção
+- **SQLite** — banco de dados local para desenvolvimento
 - **Pydantic** — validação de dados
 - **ReportLab** — geração de relatórios em PDF
 
@@ -14,8 +20,8 @@ API REST para gerenciamento de agendamentos, clientes, serviços e pagamentos �
 
 ```bash
 # 1. Clone o repositório
-git clone https://github.com/seu-usuario/agendamento-app.git
-cd agendamento-app
+git clone https://github.com/Ruan-Vittor/agendamento-api.git
+cd agendamento-api
 
 # 2. Crie e ative o ambiente virtual
 python -m venv venv
@@ -28,6 +34,8 @@ pip install -r requirements.txt
 # 4. Rode o servidor
 uvicorn app.main:app --reload
 ```
+
+> Em produção, defina a variável de ambiente `DATABASE_URL` com a string de conexão do PostgreSQL. Sem ela, a API usa SQLite localmente como fallback.
 
 ## 📡 Endpoints disponíveis
 
@@ -48,7 +56,7 @@ uvicorn app.main:app --reload
 ## 📂 Estrutura do projeto
 
 ```
-agendamento-app/
+agendamento-api/
 ├── app/
 │   ├── main.py           # Aplicação FastAPI
 │   ├── database.py       # Conexão com o banco
@@ -59,7 +67,6 @@ agendamento-app/
 │       ├── servicos.py
 │       ├── agendamentos.py
 │       └── relatorios.py
-├── relatorios/           # PDFs gerados
 ├── requirements.txt
 └── README.md
 ```
