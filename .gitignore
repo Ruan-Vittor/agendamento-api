@@ -1,1 +1,6 @@
 *.db
+*.db
+__pycache__/
+*.pyc
+relatorios/
+*.db
