@@ -4,7 +4,7 @@ API REST para gerenciamento de agendamentos, clientes, serviços e pagamentos �
 
 ## 🌐 Deploy
 
-API em produção: https://agendamento-api-clnt.onrender.com
+API em produção: https://agendamento-api-clnt.onrender.com/docs
 
 ## 🚀 Tecnologias
 
